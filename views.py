@@ -2,8 +2,12 @@ from django.shortcuts import render
 from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.views.decorators.csrf import csrf_exempt
 
+from django.conf import settings
+
 import json
 import requests
+from bs4 import BeautifulSoup, NavigableString
+
 import time
 from django.views.decorators.cache import never_cache
 from datetime import date, datetime
@@ -12,7 +16,7 @@ import uuid
 import xml.etree.ElementTree as ET
 from distutils.version import StrictVersion
 from xml.etree.ElementTree import tostring
-from ifttt.models import VersionUpdateEvent, WebsiteUnavailableEvent
+from ifttt.models import VersionUpdateEvent, WebsiteUnavailableEvent, BeerOnTapEvent, BeerList
 
 static_json = '{ \
   "data": { \
@@ -20,6 +24,9 @@ static_json = '{ \
         "triggers": { \
             "website_down": { \
               "your_website_url": "https://getvisualizer.com" \
+            }, \
+            "beer_on_tap": { \
+              "brewery_name": "Goose Island" \
             }, \
             "update_available":{ \
               "your_version_number": "1.2.50" \
@@ -134,6 +141,65 @@ def __create_website_unavailable_record(value, user_url):
     )
     new_event.save()
 
+def __create_beer_in_list(brewery_name, beer_name, venue):
+    new_event = BeerList(
+        brewery_name = brewery_name,
+        beer_name = beer_name,
+        venue= venue)
+    new_event.save()
+
+def __remove_beer_in_list(brewery_name, beer_name, venue):
+    beer = BeerList.objects.filter(brewery_name = brewery_name, beer_name = beer_name, venue= venue)
+    beer.delete()
+
+def __get_beer_in_list(venue):
+    beer_list = BeerList.objects.filter(venue=venue).values_list('brewery_name', 'beer_name')
+    return beer_list
+    
+def __create_beer_on_tap_record(brewery_name, beer_name, venue, removed = False):
+    counter = str(uuid.uuid4())
+    meta_list = {
+        'id': counter,
+        'timestamp': int(time.time())
+    }
+    event_list = {
+        'created_at': get_iso_date(),
+        'removed': removed,
+        'brewery_name': brewery_name,
+        'beer_name': beer_name,
+        'venue': venue,
+        'meta': meta_list
+    }
+    new_event = BeerOnTapEvent(
+        trigger_name = 'beer_on_tap',
+        meta_id = meta_list['id'],
+        meta_timestamp = meta_list['timestamp'],
+        created_at = event_list['created_at'],
+        removed = event_list['removed'],
+        brewery_name = event_list['brewery_name'],
+        beer_name = event_list['beer_name'],
+        venue = event_list['venue'],
+    )
+    new_event.save()
+
+def __get_beer_event_records(limit, user_brewery_name=None):
+    event_list = []
+    object_list = BeerOnTapEvent.objects.filter(brewery_name__startswith=user_brewery_name).order_by('-meta_timestamp')[:limit]
+    for beer_event in object_list:
+        meta_list = {
+            'id': beer_event.meta_id,
+            'timestamp': beer_event.meta_timestamp,
+        }
+        returned_event = {
+            'created_at': str(beer_event.created_at.isoformat('T')),
+            'beer_name': beer_event.beer_name,
+            'venue': beer_event.venue,
+            'still_available': not beer_event.removed,
+            'meta': meta_list
+        }
+        event_list.append(returned_event)
+    return event_list
+
 def __get_website_event_records(limit=50, user_url=None):
     recipe_list = []
     object_list = WebsiteUnavailableEvent.objects.filter(web_url=user_url).order_by('-meta_timestamp')[:limit]
@@ -174,7 +240,7 @@ def ifttt(request, api_version=1, action='status', encoding='', params=None, **k
     triggerFields = {}
 
     channel_key = request.META.get('HTTP_IFTTT_CHANNEL_KEY')
-    if channel_key is None or channel_key != '-dOYNBUgfE7fVdZSkmxJEDInECNMJ8vQi1yvSHgEOybkfYpeOfUnqfa59spTZeGw':
+    if channel_key is None or channel_key != settings.IFTTT_CHANNEL_KEY:
         data = {}
         value = {'message':'Unauthorized'}
         data['errors'] = [value]
@@ -279,6 +345,8 @@ def json_builder(input_data, trigger_enum, limit, new_values=False, value=None):
         data_list = __get_update_records(limit)
     elif trigger_enum == 1:
         data_list = __get_website_event_records(limit, input_data)
+    elif trigger_enum == 3:
+        data_list = __get_beer_event_records(limit, input_data)
     else:
         while limit > count and num_records > count:
             data_list.append(__test_data(trigger_enum, count, value))
@@ -297,6 +365,8 @@ def triggers(request, params, limit, triggerFields):
         return website_down(request, limit, triggerFields)
     elif params == 'update_available':
         return update_available(request, limit, triggerFields)
+    elif params == 'beer_on_tap':
+        return beer_on_tap(request, limit, triggerFields )
     return HttpResponse(params)
 
 def user_info(request):
@@ -308,6 +378,72 @@ def user_info(request):
     data = {}
     data['data'] = user_info
     return json_response(json.dumps(data))
+
+def __get_beer_list():
+    # return a list of brewery name and beer name
+    city_beer_store_url = 'http://citybeerstore.com/menu/'
+    brewery_list = []
+    try:
+        r = requests.get(city_beer_store_url, timeout=10)
+        status = r.status_code     
+    except:
+        status = 500
+        return brewery_list
+    
+    soup = BeautifulSoup(r.text)
+    # Data is in the first 'ul' HTML element
+    beerlist = soup.ul
+    for beer in beerlist.children:
+        # Only interate over Tag elements
+        if type(beer) is not NavigableString:
+            brewery_list.append( ( unicode(beer.select("div")[0].string), unicode(beer.select("div")[1].string) ))
+
+    return brewery_list
+
+def __create_record():
+    beer_list = __get_beer_list()
+    for beer in beer_list:
+        __create_beer_on_tap_record(beer[0], beer[1], 'City Beer Store')
+
+def beer_on_tap(request, limit, triggerFields ):
+    brewery_name = None
+    if "brewery_name" in triggerFields:
+        brewery_name = triggerFields['brewery_name']
+    else:
+        data = {}
+        value = {'message':'Missing Trigger parameter for brewery_name'}
+        data['errors'] = [value]
+        return json_response(json.dumps(data), 400)
+
+    # scrap website
+    beer_list = __get_beer_list()
+
+    # Get beer list stored in DB
+    db_beer_list = __get_beer_in_list('City Beer Store')
+    
+    # Update DB
+    for beer in beer_list:
+        already_on_tap = (beer[0] , beer[1]) in db_beer_list
+
+        # Don't need to do anything
+        if already_on_tap:
+            continue
+        else:
+            # add to menu
+            __create_beer_in_list(beer[0], beer[1], 'City Beer Store')
+            # create event
+            __create_beer_on_tap_record(beer[0], beer[1], 'City Beer Store')
+
+    for beer in db_beer_list:
+        if beer not in beer_list:
+            # remove from menu
+            __remove_beer_in_list(beer[0], beer[1], 'City Beer Store')
+            # create a removed event
+            __create_beer_on_tap_record(beer[0], beer[1], 'City Beer Store', True)
+            
+    # Return all records of matching names
+    data = json_builder( brewery_name, 3, limit) 
+    return json_response(data)
 
 def website_down(request, limit, triggerFields):
 
