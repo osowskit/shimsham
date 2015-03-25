@@ -184,11 +184,21 @@ def __create_beer_on_tap_record(brewery_name, beer_name, venue, removed = False)
     new_event.save()
 
 def __get_beer_event_records(limit, names):
+    object_list = []
     event_list = []
-    user_brewery_name = names[0]
-    venue = names[1]
-    
-    object_list = BeerOnTapEvent.objects.filter(brewery_name__contains=user_brewery_name, venue__iexact=venue).order_by('-meta_timestamp')[:limit]
+    if names is not None:
+        user_brewery_name = names[0]
+        venue = names[1]
+        
+        object_list = BeerOnTapEvent.objects.filter(
+            brewery_name__contains=user_brewery_name,
+            venue__iexact=venue
+        ).order_by('-meta_timestamp')[:limit]
+    else:
+        object_list = BeerOnTapEvent.objects.filter(
+            removed=False
+        ).order_by('-meta_timestamp')[:limit]
+
     for beer_event in object_list:
         meta_list = {
             'id': beer_event.meta_id,
@@ -196,6 +206,7 @@ def __get_beer_event_records(limit, names):
         }
         returned_event = {
             'created_at': str(beer_event.created_at.isoformat('T')),
+            'brewery_name': beer_event.brewery_name,
             'beer_name': beer_event.beer_name,
             'venue': beer_event.venue,
             'still_available': not beer_event.removed,
@@ -349,7 +360,7 @@ def json_builder(input_data, trigger_enum, limit, new_values=False, value=None):
         data_list = __get_update_records(limit)
     elif trigger_enum == 1:
         data_list = __get_website_event_records(limit, input_data)
-    elif trigger_enum == 3:
+    elif trigger_enum == 3 or trigger_enum == 4:
         data_list = __get_beer_event_records(limit, input_data)
     else:
         while limit > count and num_records > count:
@@ -371,6 +382,8 @@ def triggers(request, params, limit, triggerFields):
         return update_available(request, limit, triggerFields)
     elif params == 'beer_on_tap':
         return beer_on_tap(request, limit, triggerFields )
+    elif params == 'beer_updates':
+        return beer_updates(request, limit, triggerFields)
     return HttpResponse(params)
 
 def user_info(request):
@@ -460,6 +473,10 @@ def __create_record():
     beer_list = __get_beer_list()
     for beer in beer_list:
         __create_beer_on_tap_record(beer[0], beer[1], 'City Beer Store')
+
+def beer_updates( request, limit, triggerFields):
+    data = json_builder( None, 4, limit) 
+    return json_response(data)
 
 def beer_on_tap(request, limit, triggerFields ):
     brewery_name = None
