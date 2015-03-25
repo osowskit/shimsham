@@ -1,6 +1,7 @@
 from django.shortcuts import render
 from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.views.decorators.csrf import csrf_exempt
+from django.utils.encoding import smart_text
 
 from django.conf import settings
 
@@ -182,9 +183,12 @@ def __create_beer_on_tap_record(brewery_name, beer_name, venue, removed = False)
     )
     new_event.save()
 
-def __get_beer_event_records(limit, user_brewery_name=None):
+def __get_beer_event_records(limit, names):
     event_list = []
-    object_list = BeerOnTapEvent.objects.filter(brewery_name__startswith=user_brewery_name).order_by('-meta_timestamp')[:limit]
+    user_brewery_name = names[0]
+    venue = names[1]
+    
+    object_list = BeerOnTapEvent.objects.filter(brewery_name__contains=user_brewery_name, venue__iexact=venue).order_by('-meta_timestamp')[:limit]
     for beer_event in object_list:
         meta_list = {
             'id': beer_event.meta_id,
@@ -379,7 +383,7 @@ def user_info(request):
     data['data'] = user_info
     return json_response(json.dumps(data))
 
-def __get_beer_list():
+def __get_beer_list_city():
     # return a list of brewery name and beer name
     city_beer_store_url = 'http://citybeerstore.com/menu/'
     brewery_list = []
@@ -400,6 +404,58 @@ def __get_beer_list():
 
     return brewery_list
 
+def __get_beer_website(in_url):
+    status = 404
+    
+    try:
+        r = requests.get(in_url, timeout=10)
+        status = r.status_code
+        r.encoding = 'utf-8'
+    except:
+        status = 500
+        return []
+    return r
+
+def process_data(r):
+    # Parse HTML document for beer names in two columns
+    #soup = BeautifulSoup(open('Trappist.html'))
+    soup = BeautifulSoup(r.text)
+
+    search_id = ['back_bar_content', 'front_bar_content']
+
+    # Set type prevents duplicate beer names
+    beer_names = []
+    
+    for html_id in search_id:
+        beerlist = soup.find(id=html_id)
+
+        for beer in beerlist.children:
+            if type(beer) is not NavigableString:
+                beer_name = u''
+                brewery_name = u''
+                if beer is not None:
+                    # Stripped strings will remove spacing from ends
+                    counter = 0
+                    for iter_string in beer.stripped_strings:
+                        # Replace nbsp with ' ' and strange punctuation with '
+                        temp_name = smart_text(iter_string, 'utf-8')
+                        if counter == 0:
+                            brewery_name = temp_name
+                        elif counter == 1:
+                            beer_name = temp_name
+                        else:
+                            beer_name = beer_name + " " + temp_name
+                        counter = counter + 1
+                    if counter == 1:
+                        beer_name = brewery_name
+                    if len(brewery_name) is not 0:
+                        beer_names.append( (brewery_name, beer_name ) )
+    return beer_names
+
+def __get_beer_list(location):
+    beer_list = __get_beer_website(location)
+    return process_data(beer_list)
+    
 def __create_record():
     beer_list = __get_beer_list()
     for beer in beer_list:
@@ -415,11 +471,20 @@ def beer_on_tap(request, limit, triggerFields ):
         data['errors'] = [value]
         return json_response(json.dumps(data), 400)
 
+    if "venue_name" in triggerFields:
+        venue_name = triggerFields['venue_name']
+    else:
+        venue_name = 'City Beer Store'
+
+    beer_list = []
     # scrap website
-    beer_list = __get_beer_list()
+    if 'City Beer Store' in venue_name:
+        beer_list = __get_beer_list_city()
+    else:
+        beer_list = __get_beer_list('http://www.thetrappist.com/on-tap.php')
 
     # Get beer list stored in DB
-    db_beer_list = __get_beer_in_list('City Beer Store')
+    db_beer_list = __get_beer_in_list(venue_name)
     
     # Update DB
     for beer in beer_list:
@@ -429,20 +494,20 @@ def beer_on_tap(request, limit, triggerFields ):
         if already_on_tap:
             continue
         else:
-            # add to menu
-            __create_beer_in_list(beer[0], beer[1], 'City Beer Store')
+            # add to menu : 0 is Brewery Name, 1 is Beer Name
+            __create_beer_in_list(beer[0], beer[1], venue_name)
             # create event
-            __create_beer_on_tap_record(beer[0], beer[1], 'City Beer Store')
+            __create_beer_on_tap_record(beer[0], beer[1], venue_name)
 
     for beer in db_beer_list:
         if beer not in beer_list:
             # remove from menu
-            __remove_beer_in_list(beer[0], beer[1], 'City Beer Store')
+            __remove_beer_in_list(beer[0], beer[1], venue_name)
             # create a removed event
-            __create_beer_on_tap_record(beer[0], beer[1], 'City Beer Store', True)
+            __create_beer_on_tap_record(beer[0], beer[1], venue_name, True)
             
     # Return all records of matching names
-    data = json_builder( brewery_name, 3, limit) 
+    data = json_builder( [brewery_name, venue_name] , 3, limit) 
     return json_response(data)
 
 def website_down(request, limit, triggerFields):
