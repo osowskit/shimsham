@@ -8,7 +8,7 @@ class TriggerEvent(models.Model):
         ('website_down', 'website unavailable'),
         ('update_available', 'update'),
         ('beer_on_tap', 'beer_available'),
-        ('untapped_beer_on_tap', 'beer_available'),
+        ('untapped_beer_on_tap', 'untapped_beer_available'),
     )
     trigger_name = models.CharField(max_length=80, choices=TRIGGER_NAMES)
     meta_id = models.CharField(max_length=100)

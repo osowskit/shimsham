@@ -282,7 +282,7 @@ def __create_untappd_beer_on_tap_record(
         'created_at': get_iso_date(),
     }
     new_event = UntappdBeerOnTapEvent(
-        trigger_name='beer_on_tap',
+        trigger_name='untapped_beer_on_tap',
         meta_id=meta_list['id'],
         meta_timestamp=meta_list['timestamp'],
         created_at=event_list['created_at'],
@@ -294,9 +294,11 @@ def __create_untappd_beer_on_tap_record(
     new_event.save()
 
 
-def __get_untappd_event_records(limit, names):
+def __get_untappd_event_records(limit, venue_name):
     event_list = []
-    object_list = UntappdBeerOnTapEvent.objects.all().order_by(
+    object_list = UntappdBeerOnTapEvent.objects.filter(
+        venue__iexact=venue_name
+        ).order_by(
         '-meta_timestamp'
         )[:limit]
     for beer_event in object_list:
@@ -807,7 +809,7 @@ def untappd_updates(request, limit, triggerFields):
 
     # create events for new beer
     data = []
-    data = json_builder(None, 5, limit)
+    data = json_builder(venue_name, 5, limit)
     return json_response(data)
 
 
