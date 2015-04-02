@@ -794,7 +794,9 @@ def untappd_updates(request, limit, triggerFields):
         }
         )
     activity_beer_list = []
-    __update_venue_last_checkin(venue_uid, highest_checkin)
+    # It is possible that there weren't any results
+    if last_checkin < highest_checkin:
+        __update_venue_last_checkin(venue_uid, highest_checkin)
 
     # return json_response(json.dumps(updated_list))
     for beer in created_list:
