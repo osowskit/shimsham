@@ -14,13 +14,13 @@ from django.utils.http import urlencode
 from datetime import datetime
 import pytz
 import uuid
-import xml.etree.ElementTree as ET
 from ifttt.models import VersionUpdateEvent, \
     WebsiteUnavailableEvent, \
     BeerOnTapEvent, \
     BeerList, \
     UntappdBeerOnTapEvent
 from ifttt.models import UntappdBeer, Venue
+from ifttt.VisualizerVersion import get_update_records, add_new_version, get_version_url
 
 static_json = '{ \
   "data": { \
@@ -74,41 +74,6 @@ def json_response(response_data, in_status=200):
         )
 
 
-def __version_from_xml_response(xml_data):
-    root = ET.fromstring(xml_data)
-    return_data = {}
-    if root is not None:
-        new_versions = root.findall('./version/*')
-        for elem in new_versions:
-            return_data[elem.tag] = elem.text
-    return return_data
-
-
-def __get_url(url, user_agent):
-    my_data = None
-    header = {'User-Agent': user_agent}
-    try:
-        r = requests.get(url, headers=header)
-
-        if r.status_code == 200:
-            xml_data = r.content
-            my_data = __version_from_xml_response(xml_data)
-    except:
-        my_data = []
-    return my_data
-
-
-# Return a version string if it is newer than customer value. None otherwise.
-def __add_new_version(version_list):
-    # Iterate list and add to DB if it doesn't exist
-    for version_name, value in version_list.iteritems():
-        try:
-            VersionUpdateEvent.objects.get(
-                version_number=value)
-        except VersionUpdateEvent.DoesNotExist:
-            __create_version_update_record(value)
-
-
 def __new_website_status(status, user_url):
     try:
         last_event = WebsiteUnavailableEvent.objects.filter(
@@ -120,27 +85,6 @@ def __new_website_status(status, user_url):
         # assume list is empty
         return True
     return False
-
-
-def __create_version_update_record(value):
-    counter = str(uuid.uuid4())
-    meta_list = {
-        'id': counter,
-        'timestamp': int(time.time())
-    }
-    recipe_list = {
-        'created_at': get_iso_date(),
-        'version_number': value,
-        'meta': meta_list
-    }
-    new_event = VersionUpdateEvent(
-        trigger_name="update_available",
-        meta_id=meta_list['id'],
-        meta_timestamp=meta_list['timestamp'],
-        created_at=recipe_list['created_at'],
-        version_number=recipe_list['version_number']
-        )
-    new_event.save()
 
 
 def __create_website_unavailable_record(value, user_url):
@@ -351,44 +295,6 @@ def __get_beer_event_records(limit, names):
     return event_list
 
 
-def __get_website_event_records(limit=50, user_url=None):
-    recipe_list = []
-    object_list = WebsiteUnavailableEvent.objects.filter(
-        web_url=user_url
-        ).order_by('-meta_timestamp')[:limit]
-    for version_event in object_list:
-        meta_list = {
-            'id': version_event.meta_id,
-            'timestamp': version_event.meta_timestamp,
-        }
-        returned_event = {
-            'occurred_at': str(version_event.occurred_at.isoformat('T')),
-            'status_code': version_event.status_code,
-            'meta': meta_list
-        }
-        recipe_list.append(returned_event)
-    return recipe_list
-
-
-def __get_update_records(limit=50):
-    recipe_list = []
-    object_list = VersionUpdateEvent.objects.order_by(
-        '-meta_timestamp'
-        )[:limit]
-    for version_event in object_list:
-        meta_list = {
-            'id': version_event.meta_id,
-            'timestamp': version_event.meta_timestamp,
-        }
-        returned_event = {
-            'created_at': str(version_event.created_at.isoformat('T')),
-            'version_number': version_event.version_number,
-            'meta': meta_list
-        }
-        recipe_list.append(returned_event)
-    return recipe_list
-
-
 @never_cache
 @csrf_exempt
 def ifttt(request, api_version=1, action='status',
@@ -428,7 +334,7 @@ def ifttt(request, api_version=1, action='status',
         val = __new_website_status(200)
         return HttpResponse(val)
     elif action == 'display':
-        returned_records = __get_update_records()
+        returned_records = get_update_records(limit)
         json_string = json.dumps(returned_records)
         return json_response(json_string)
     return HttpResponseBadRequest('No endpoint requested')
@@ -907,11 +813,11 @@ def update_available(request, limit, triggerFields):
 
     user_agent = "Visualizer for SketchUp %s/xml" % version_number
     # get latest from getvisualizer if greater than input version
-    version_list = __get_url(version_url, user_agent)
+    version_list = get_version_url(version_url, user_agent)
 
     # Add to DB if newer
-    if len(version_list):
-        new_version = __add_new_version(version_list)
+    if version_list is not None and len(version_list) > 0:
+        new_version = add_new_version(version_list)
 
     # Return data
     return_data = json_builder(
