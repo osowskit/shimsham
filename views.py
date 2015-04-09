@@ -1,6 +1,5 @@
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.views.decorators.csrf import csrf_exempt
-from django.utils.encoding import smart_text
 from django.core.exceptions import ObjectDoesNotExist
 from django.conf import settings
 
@@ -14,11 +13,13 @@ from django.utils.http import urlencode
 from datetime import datetime
 import pytz
 import uuid
-from ifttt.models import VersionUpdateEvent, BeerOnTapEvent, \
-    BeerList, UntappdBeerOnTapEvent
+from ifttt.models import VersionUpdateEvent, UntappdBeerOnTapEvent
 from ifttt.models import UntappdBeer, Venue
 from ifttt.VisualizerVersion import get_update_records, add_new_version, get_version_url
-from ifttt.VisualizerWebsite import update_website_status, get_website_event_records
+from ifttt.VisualizerWebsite import update_website_status, get_website_event_records, \
+     get_website
+from ifttt.BeerEventScrapper import get_beer_event_records, get_beer_list_city, get_beer_list,\
+     create_beer_in_list, get_beer_in_list, remove_beer_in_list, create_beer_on_tap_record
 
 static_json = '{ \
   "data": { \
@@ -49,16 +50,6 @@ uid = [
     ]
 
 
-def __get_website(in_url):
-    status = 404
-    try:
-        r = requests.get(in_url, timeout=5)
-        status = r.status_code
-    except:
-        status = 404
-    return status
-
-
 def get_iso_date():
     return datetime.now(pytz.utc).replace(microsecond=0).isoformat('T')
 
@@ -70,30 +61,6 @@ def json_response(response_data, in_status=200):
         content_type='application/json; charset=utf-8',
         status=in_status
         )
-
-
-def __create_beer_in_list(brewery_name, beer_name, venue):
-    new_event = BeerList(
-        brewery_name=brewery_name,
-        beer_name=beer_name,
-        venue=venue)
-    new_event.save()
-
-
-def __remove_beer_in_list(brewery_name, beer_name, venue):
-    beer = BeerList.objects.filter(
-        brewery_name=brewery_name,
-        beer_name=beer_name,
-        venue=venue
-        )
-    beer.delete()
-
-
-def __get_beer_in_list(venue):
-    beer_list = BeerList.objects.filter(
-        venue=venue
-        ).values_list('brewery_name', 'beer_name')
-    return beer_list
 
 
 def __get_venue_info(venue_name):
@@ -144,33 +111,6 @@ def __get_beer_in_untappd_list(venue_uid):
             'checkin_id'
             )
     return beer_list
-
-
-def __create_beer_on_tap_record(brewery_name, beer_name, venue, removed=False):
-    counter = str(uuid.uuid4())
-    meta_list = {
-        'id': counter,
-        'timestamp': int(time.time())
-    }
-    event_list = {
-        'created_at': get_iso_date(),
-        'removed': removed,
-        'brewery_name': brewery_name,
-        'beer_name': beer_name,
-        'venue': venue,
-        'meta': meta_list
-    }
-    new_event = BeerOnTapEvent(
-        trigger_name='beer_on_tap',
-        meta_id=meta_list['id'],
-        meta_timestamp=meta_list['timestamp'],
-        created_at=event_list['created_at'],
-        removed=event_list['removed'],
-        brewery_name=event_list['brewery_name'],
-        beer_name=event_list['beer_name'],
-        venue=event_list['venue'],
-    )
-    new_event.save()
 
 
 def __create_untappd_beer_on_tap_record(
@@ -224,39 +164,6 @@ def __get_untappd_event_records(limit, venue_name):
     return event_list
 
 
-def __get_beer_event_records(limit, names):
-    object_list = []
-    event_list = []
-    if names is not None:
-        user_brewery_name = names[0]
-        venue = names[1]
-
-        object_list = BeerOnTapEvent.objects.filter(
-            brewery_name__contains=user_brewery_name,
-            venue__iexact=venue
-        ).order_by('-meta_timestamp')[:limit]
-    else:
-        object_list = BeerOnTapEvent.objects.filter(
-            removed=False
-        ).order_by('-meta_timestamp')[:limit]
-
-    for beer_event in object_list:
-        meta_list = {
-            'id': beer_event.meta_id,
-            'timestamp': beer_event.meta_timestamp,
-        }
-        returned_event = {
-            'created_at': str(beer_event.created_at.isoformat('T')),
-            'brewery_name': beer_event.brewery_name,
-            'beer_name': beer_event.beer_name,
-            'venue': beer_event.venue.replace(" ", ""),
-            'still_available': not beer_event.removed,
-            'meta': meta_list
-        }
-        event_list.append(returned_event)
-    return event_list
-
-
 @never_cache
 @csrf_exempt
 def ifttt(request, api_version=1, action='status',
@@ -289,9 +196,6 @@ def ifttt(request, api_version=1, action='status',
         return user_info(request)
     elif action == 'triggers':
         return triggers(request, params, limit, triggerFields)
-    elif action == 'create':
-        # __create_record()
-        return HttpResponse('created something')
     elif action == 'show':
         val = __new_website_status(200)
         return HttpResponse(val)
@@ -370,7 +274,7 @@ def json_builder(input_data, trigger_enum, limit,
     elif trigger_enum == 1:
         data_list = get_website_event_records(limit, input_data)
     elif trigger_enum == 3 or trigger_enum == 4:
-        data_list = __get_beer_event_records(limit, input_data)
+        data_list = get_beer_event_records(limit, input_data)
     elif trigger_enum == 5:
         data_list = __get_untappd_event_records(limit, input_data)
     else:
@@ -411,94 +315,6 @@ def user_info(request):
     data = {}
     data['data'] = user_info
     return json_response(json.dumps(data))
-
-
-def __get_beer_list_city():
-    # return a list of brewery name and beer name
-    city_beer_store_url = 'http://citybeerstore.com/menu/'
-    brewery_list = []
-    try:
-        r = requests.get(city_beer_store_url, timeout=10)
-    except:
-        return brewery_list
-
-    soup = BeautifulSoup(r.text)
-    # Data is in the first 'ul' HTML element
-    beerlist = soup.ul
-    for beer in beerlist.children:
-        # Only interate over Tag elements
-        if type(beer) is not NavigableString:
-            brewery_list.append(
-                (
-                    unicode(beer.select("div")[0].string),
-                    unicode(beer.select("div")[1].string)
-                )
-            )
-
-    return brewery_list
-
-
-def __get_beer_website(in_url):
-    try:
-        r = requests.get(in_url, timeout=10)
-        r.encoding = 'utf-8'
-    except:
-        return []
-    return r
-
-
-# trappist
-def process_data(r):
-    # Parse HTML document for beer names in two columns
-    # soup = BeautifulSoup(open('Trappist.html'))
-    soup = BeautifulSoup(r.text)
-
-    search_id = ['back_bar_content', 'front_bar_content']
-
-    # Set type prevents duplicate beer names
-    beer_names = []
-
-    for html_id in search_id:
-        beerlist = soup.find(id=html_id)
-
-        for beer in beerlist.children:
-            if type(beer) is not NavigableString:
-                beer_name = u''
-                brewery_name = u''
-                if beer is not None:
-                    # Stripped strings will remove spacing from ends
-                    counter = 0
-                    for iter_string in beer.stripped_strings:
-                        # Replace nbsp with ' ' and strange punctuation with '
-                        temp_name = smart_text(iter_string, 'utf-8')
-                        if counter == 0:
-                            brewery_name = temp_name
-                        elif counter == 1:
-                            beer_name = temp_name
-                        else:
-                            beer_name = beer_name + " " + temp_name
-                        counter = counter + 1
-                    if counter == 1:
-                        beer_name = brewery_name
-                    if len(brewery_name) is not 0:
-                        beer_names.append(
-                            (
-                                brewery_name,
-                                beer_name
-                            )
-                        )
-    return beer_names
-
-
-def __get_beer_list(location):
-    beer_list = __get_beer_website(location)
-    return process_data(beer_list)
-
-
-def __create_record():
-    beer_list = __get_beer_list()
-    for beer in beer_list:
-        __create_beer_on_tap_record(beer[0], beer[1], 'City Beer Store')
 
 
 def get_untappd_api(in_url, endpoint='venue/checkins/3282',
@@ -696,12 +512,12 @@ def beer_on_tap(request, limit, triggerFields):
     beer_list = []
     # scrap website
     if 'City Beer Store' in venue_name:
-        beer_list = __get_beer_list_city()
+        beer_list = get_beer_list_city()
     else:
-        beer_list = __get_beer_list('http://www.thetrappist.com/on-tap.php')
+        beer_list = get_beer_list('http://www.thetrappist.com/on-tap.php')
 
     # Get beer list stored in DB
-    db_beer_list = __get_beer_in_list(venue_name)
+    db_beer_list = get_beer_in_list(venue_name)
 
     # Update DB
     for beer in beer_list:
@@ -712,16 +528,16 @@ def beer_on_tap(request, limit, triggerFields):
             continue
         else:
             # add to menu : 0 is Brewery Name, 1 is Beer Name
-            __create_beer_in_list(beer[0], beer[1], venue_name)
+            create_beer_in_list(beer[0], beer[1], venue_name)
             # create event
-            __create_beer_on_tap_record(beer[0], beer[1], venue_name)
+            create_beer_on_tap_record(beer[0], beer[1], venue_name)
 
     for beer in db_beer_list:
         if beer not in beer_list:
             # remove from menu
-            __remove_beer_in_list(beer[0], beer[1], venue_name)
+            remove_beer_in_list(beer[0], beer[1], venue_name)
             # create a removed event
-            __create_beer_on_tap_record(beer[0], beer[1], venue_name, True)
+            create_beer_on_tap_record(beer[0], beer[1], venue_name, True)
 
     # Return all records of matching names
     data = json_builder([brewery_name, venue_name], 3, limit)
@@ -740,7 +556,7 @@ def website_down(request, limit, triggerFields):
         return json_response(json.dumps(data), 400)
 
     # Is website reachable
-    status = __get_website(url)
+    status = get_website(url)
 
     # Query last event.  If status changed, add a new record
     update_website_status(status, url)

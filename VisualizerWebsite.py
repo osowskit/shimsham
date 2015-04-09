@@ -24,6 +24,16 @@ def get_iso_date():
     return datetime.now(pytz.utc).replace(microsecond=0).isoformat('T')
 
 
+def get_website(in_url):
+    status = 404
+    try:
+        r = requests.get(in_url, timeout=5)
+        status = r.status_code
+    except:
+        status = 404
+    return status
+
+
 def get_website_event_records(limit=50, user_url=None):
     recipe_list = []
     object_list = WebsiteUnavailableEvent.objects.filter(
