@@ -5,16 +5,13 @@ from django.conf import settings
 
 import json
 import requests
-from bs4 import BeautifulSoup, NavigableString
-
 import time
 from django.views.decorators.cache import never_cache
-from django.utils.http import urlencode
+
 from datetime import datetime
 import pytz
 import uuid
-from ifttt.models import VersionUpdateEvent, UntappdBeerOnTapEvent
-from ifttt.models import UntappdBeer, Venue
+
 from ifttt.VisualizerVersion import get_update_records, add_new_version, \
     get_version_url
 from ifttt.VisualizerWebsite import update_website_status, \
@@ -23,6 +20,11 @@ from ifttt.VisualizerWebsite import update_website_status, \
 from ifttt.BeerEventScrapper import get_beer_event_records, \
     get_beer_list_city, get_beer_list, create_beer_in_list, get_beer_in_list, \
     remove_beer_in_list, create_beer_on_tap_record
+from ifttt.UntappdVenue import get_venue_id, parse_untappd_venue_activity, \
+     update_venue_last_checkin
+from ifttt.UntappdBeer import create_untappd_beer_on_tap_record, \
+     get_untappd_event_records, process_untappd_beer_list
+     
 
 static_json = '{ \
   "data": { \
@@ -60,107 +62,6 @@ def json_response(response_data, in_status=200):
         )
 
 
-def __get_venue_info(venue_name):
-    venue_list = Venue.objects.filter(venue_name=venue_name).values()
-    return venue_list
-
-
-def __create_venue_untappd(data):
-    new_event = Venue(
-        venue_name=data['venue_name'],
-        venue_uid=data['venue_uid'],
-        last_checkin_id=data['last_checkin_id'],
-        venue_social_name=data['venue_social_name'],
-        )
-    new_event.save()
-
-
-def __create_beer_in_untappd_list(
-        brewery_name,
-        brewery_id,
-        beer_name,
-        beer_id,
-        venue,
-        venue_id,
-        checkin_id,
-        last_seen
-        ):
-    new_event = UntappdBeer(
-        brewery_name=brewery_name,
-        brewery_id=brewery_id,
-        beer_name=beer_name,
-        beer_uid=beer_id,
-        venue=venue,
-        venue_uid=venue_id,
-        checkin_id=checkin_id,
-        last_seen=last_seen
-    )
-    new_event.save()
-
-
-def __get_beer_in_untappd_list(venue_uid):
-    beer_list = UntappdBeer.objects.filter(
-        venue_uid=venue_uid
-        ).values_list(
-            'brewery_name',
-            'beer_name',
-            'last_seen',
-            'checkin_id'
-            )
-    return beer_list
-
-
-def __create_untappd_beer_on_tap_record(
-        brewery_name,
-        beer_name,
-        venue,
-        twitter_handle
-        ):
-    counter = str(uuid.uuid4())
-    meta_list = {
-        'id': counter,
-        'timestamp': int(time.time())
-    }
-    event_list = {
-        'created_at': get_iso_date(),
-    }
-    new_event = UntappdBeerOnTapEvent(
-        trigger_name='untapped_beer_on_tap',
-        meta_id=meta_list['id'],
-        meta_timestamp=meta_list['timestamp'],
-        created_at=event_list['created_at'],
-        brewery_name=brewery_name,
-        beer_name=beer_name,
-        venue=venue,
-        twitter_handle=twitter_handle
-    )
-    new_event.save()
-
-
-def __get_untappd_event_records(limit, venue_name):
-    event_list = []
-    object_list = UntappdBeerOnTapEvent.objects.filter(
-        venue__iexact=venue_name
-        ).order_by(
-        '-meta_timestamp'
-        )[:limit]
-    for beer_event in object_list:
-        meta_list = {
-            'id': beer_event.meta_id,
-            'timestamp': beer_event.meta_timestamp,
-        }
-        returned_event = {
-            'created_at': str(beer_event.created_at.isoformat('T')),
-            'brewery_name': beer_event.brewery_name,
-            'beer_name': beer_event.beer_name,
-            'venue': beer_event.venue,
-            'twitter_handle': beer_event.twitter_handle,
-            'meta': meta_list
-        }
-        event_list.append(returned_event)
-    return event_list
-
-
 @never_cache
 @csrf_exempt
 def ifttt(request, api_version=1, action='status',
@@ -189,13 +90,8 @@ def ifttt(request, api_version=1, action='status',
         return status(request)
     elif action == 'test':
         return test(request)
-    elif action == 'user':
-        return user_info(request)
     elif action == 'triggers':
         return triggers(request, params, limit, triggerFields)
-    elif action == 'show':
-        val = __new_website_status(200)
-        return HttpResponse(val)
     elif action == 'display':
         returned_records = get_update_records(limit)
         json_string = json.dumps(returned_records)
@@ -203,12 +99,12 @@ def ifttt(request, api_version=1, action='status',
     return HttpResponseBadRequest('No endpoint requested')
 
 
-# status return 200
+# Required by IFTTT endpoint test to return 200
 def status(request):
     return HttpResponse()
 
 
-# test/setup
+# Required by IFTTT endpoint test to initialize test data
 def test(request):
     json_string = static_json
     return HttpResponse(
@@ -229,7 +125,7 @@ def json_builder(input_data, trigger_enum, limit,
     elif trigger_enum == 3 or trigger_enum == 4:
         data_list = get_beer_event_records(limit, input_data)
     elif trigger_enum == 5:
-        data_list = __get_untappd_event_records(limit, input_data)
+        data_list = get_untappd_event_records(limit, input_data)
 
     data['data'] = data_list
     values = json.dumps(data)
@@ -252,18 +148,6 @@ def triggers(request, params, limit, triggerFields):
     return HttpResponse(params)
 
 
-def user_info(request):
-
-    user_info = {
-        'name': 'anonymous',
-        'id': 'banana_split',
-        'url': 'https://getvisualizer.com'
-        }
-    data = {}
-    data['data'] = user_info
-    return json_response(json.dumps(data))
-
-
 def get_untappd_api(in_url, endpoint='venue/checkins/3282',
                     headers=None, data={}):
     request_data = {}
@@ -283,97 +167,6 @@ def get_untappd_api(in_url, endpoint='venue/checkins/3282',
     return request_data
 
 
-def __update_venue_last_checkin(venue_uid, highest_checkin):
-    venue_entry = Venue.objects.get(venue_uid=venue_uid)
-    venue_entry.last_checkin_id = highest_checkin
-    venue_entry.save()
-
-
-def __get_venue_id(venue_name):
-    # get venue id and last_checkin_id from DB or create new record
-    untappd_api_version = 'v4/'
-
-    venue_info = __get_venue_info(venue_name)
-    venue_data = {}
-
-    if len(venue_info) == 0:
-        # search for it
-        endpoint = 'search/venue?' + urlencode(
-            {
-                'q': venue_name
-            }
-            )
-        returned_data = get_untappd_api(
-            'https://api.untappd.com/' + untappd_api_version,
-            endpoint
-            )
-        first_venue = returned_data['response']['venues']['items'][0]
-        returned_venue = first_venue['venue']
-
-        # get info using id
-        endpoint = 'venue/info/' + str(returned_venue['venue_id'])
-        returned_data = get_untappd_api(
-            'https://api.untappd.com/' + untappd_api_version,
-            endpoint
-            )
-        venue_info = returned_data['response']['venue']
-        venue_data['venue_uid'] = returned_venue['venue_id']
-        venue_data['venue_name'] = venue_info['venue_name']
-        venue_data['venue_social_name'] = venue_info['contact']['twitter']
-        venue_data['last_checkin_id'] = 0
-        __create_venue_untappd(venue_data)
-    else:
-        venue_data['venue_uid'] = venue_info[0]['venue_uid']
-        venue_data['last_checkin_id'] = venue_info[0]['last_checkin_id']
-        venue_data['venue_name'] = venue_info[0]['venue_name']
-        venue_data['venue_social_name'] = venue_info[0]['venue_social_name']
-    return venue_data
-
-
-def __parse_untappd_venue_activity(venue_activity_list):
-    beer_list = []
-    for checkin in venue_activity_list['response']['checkins']['items']:
-        beer_info = {}
-        beer_info['brewery_name'] = checkin['brewery']['brewery_name']
-        beer_info['beer_name'] = checkin['beer']['beer_name']
-        beer_info['beer_uid'] = checkin['beer']['bid']
-        beer_info['brewery_id'] = checkin['brewery']['brewery_id']
-        beer_info['checkin_id'] = checkin['checkin_id']
-        beer_info['last_seen'] = get_iso_date()
-        beer_list.append(beer_info)
-    return beer_list
-
-
-def __process_untappd_beer_list(beer_list, venue_data):
-    added_list = []
-    updated_list = []
-    highest_checkin = 0
-    for beer in beer_list:
-        # Could assume first entry is highest checkin id
-        highest_checkin = beer['checkin_id'] if beer['checkin_id'] > highest_checkin \
-            else highest_checkin
-        try:
-            UntappdBeer.objects.get(
-                beer_uid=beer['beer_uid'],
-                venue_uid=venue_data['venue_uid']
-                )
-            # update it if checkin id
-            updated_list.append(beer)
-        except ObjectDoesNotExist:
-            __create_beer_in_untappd_list(
-                beer['brewery_name'],
-                beer['brewery_id'],
-                beer['beer_name'],
-                beer['beer_uid'],
-                venue_data['venue'],
-                venue_data['venue_uid'],
-                beer['checkin_id'],
-                get_iso_date()  # Should use the date from Untappd Query
-                )
-            added_list.append(beer)
-    return updated_list, added_list, highest_checkin
-
-
 def untappd_updates(request, limit, triggerFields):
 
     if "venue_name" in triggerFields:
@@ -385,7 +178,7 @@ def untappd_updates(request, limit, triggerFields):
         return json_response(json.dumps(data), 400)
 
     # lookup venue ID or search/create if it doesn't exist
-    venue_data = __get_venue_id(venue_name)
+    venue_data = get_venue_id(venue_name)
     venue_uid = venue_data['venue_uid']
     last_checkin = venue_data['last_checkin_id']
     venue_name = venue_data['venue_name']
@@ -402,12 +195,12 @@ def untappd_updates(request, limit, triggerFields):
         endpoint,
         data=url_param
         )
-    activity_beer_list = __parse_untappd_venue_activity(venue_activity_list)
+    activity_beer_list = parse_untappd_venue_activity(venue_activity_list)
     venue_activity_list = []
 
     # create or update beer information
     # return list of updated and created
-    updated_list, created_list, highest_checkin = __process_untappd_beer_list(
+    updated_list, created_list, highest_checkin = process_untappd_beer_list(
         activity_beer_list,
         {
             'venue': venue_name,
@@ -417,11 +210,11 @@ def untappd_updates(request, limit, triggerFields):
     activity_beer_list = []
     # It is possible that there weren't any results
     if last_checkin < highest_checkin:
-        __update_venue_last_checkin(venue_uid, highest_checkin)
+        update_venue_last_checkin(venue_uid, highest_checkin)
 
     # return json_response(json.dumps(updated_list))
     for beer in created_list:
-        __create_untappd_beer_on_tap_record(
+        create_untappd_beer_on_tap_record(
             beer['brewery_name'],
             beer['beer_name'],
             venue_name,
