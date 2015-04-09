@@ -15,11 +15,14 @@ import pytz
 import uuid
 from ifttt.models import VersionUpdateEvent, UntappdBeerOnTapEvent
 from ifttt.models import UntappdBeer, Venue
-from ifttt.VisualizerVersion import get_update_records, add_new_version, get_version_url
-from ifttt.VisualizerWebsite import update_website_status, get_website_event_records, \
-     get_website
-from ifttt.BeerEventScrapper import get_beer_event_records, get_beer_list_city, get_beer_list,\
-     create_beer_in_list, get_beer_in_list, remove_beer_in_list, create_beer_on_tap_record
+from ifttt.VisualizerVersion import get_update_records, add_new_version, \
+    get_version_url
+from ifttt.VisualizerWebsite import update_website_status, \
+    get_website_event_records, \
+    get_website
+from ifttt.BeerEventScrapper import get_beer_event_records, \
+    get_beer_list_city, get_beer_list, create_beer_in_list, get_beer_in_list, \
+    remove_beer_in_list, create_beer_on_tap_record
 
 static_json = '{ \
   "data": { \
@@ -42,12 +45,6 @@ static_json = '{ \
     } \
   } \
 }'
-
-uid = [
-    '4126e23e-f56c-4334-b7e3-c9981b3fd576',
-    'cbc66b6f-0797-4b5e-811d-2e92624e47a9',
-    'fbb0b22a-2c51-48b3-8398-d366da3a92a0',
-    ]
 
 
 def get_iso_date():
@@ -225,12 +222,6 @@ def json_builder(input_data, trigger_enum, limit,
     data = {}
     data_list = []
 
-    # generate three for fun
-    num_records = 3
-    if new_values:
-        num_records = 4
-    count = 0
-
     if trigger_enum == 2:
         data_list = get_update_records(limit)
     elif trigger_enum == 1:
@@ -248,9 +239,7 @@ def json_builder(input_data, trigger_enum, limit,
 @never_cache
 @csrf_exempt
 def triggers(request, params, limit, triggerFields):
-    if params == 'notification_this_month':
-        return notification_month(request, limit)
-    elif params == 'website_down':
+    if params == 'website_down':
         return website_down(request, limit, triggerFields)
     elif params == 'update_available':
         return update_available(request, limit, triggerFields)
@@ -551,11 +540,6 @@ def update_available(request, limit, triggerFields):
         new_version is not None, new_version
         )
     return json_response(return_data)
-
-
-def notification_month(request, limit):
-    data = json_builder(None, 0, limit)
-    return json_response(data)
 
 
 def actions(request, params):

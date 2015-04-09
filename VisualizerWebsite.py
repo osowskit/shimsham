@@ -7,6 +7,7 @@ from datetime import datetime
 import pytz
 import uuid
 
+
 def __new_website_status(status, user_url):
     try:
         last_event = WebsiteUnavailableEvent.objects.filter(

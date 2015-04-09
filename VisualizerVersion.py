@@ -7,6 +7,7 @@ import time
 import pytz
 import uuid
 
+
 def __version_from_xml_response(xml_data):
     root = ET.fromstring(xml_data)
     return_data = {}
@@ -22,12 +23,12 @@ def get_version_url(url, user_agent):
     header = {'User-Agent': user_agent}
     try:
         r = requests.get(url, headers=header)
-    
+
         if r.status_code == 200 and r.headers['content-type'] == 'xml':
             xml_data = r.content
             my_data = __version_from_xml_response(xml_data)
     except requests.exceptions.RequestException as e:
-        return [{'error':e}]
+        return [{'error': str(e)}]
     return my_data
 
 
