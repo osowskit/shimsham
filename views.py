@@ -14,13 +14,11 @@ from django.utils.http import urlencode
 from datetime import datetime
 import pytz
 import uuid
-from ifttt.models import VersionUpdateEvent, \
-    WebsiteUnavailableEvent, \
-    BeerOnTapEvent, \
-    BeerList, \
-    UntappdBeerOnTapEvent
+from ifttt.models import VersionUpdateEvent, BeerOnTapEvent, \
+    BeerList, UntappdBeerOnTapEvent
 from ifttt.models import UntappdBeer, Venue
 from ifttt.VisualizerVersion import get_update_records, add_new_version, get_version_url
+from ifttt.VisualizerWebsite import update_website_status, get_website_event_records
 
 static_json = '{ \
   "data": { \
@@ -72,42 +70,6 @@ def json_response(response_data, in_status=200):
         content_type='application/json; charset=utf-8',
         status=in_status
         )
-
-
-def __new_website_status(status, user_url):
-    try:
-        last_event = WebsiteUnavailableEvent.objects.filter(
-            web_url=user_url
-            ).order_by('-meta_timestamp').first()
-        if last_event.status_code != str(status):
-            return True
-    except:
-        # assume list is empty
-        return True
-    return False
-
-
-def __create_website_unavailable_record(value, user_url):
-    counter = str(uuid.uuid4())
-    meta_list = {
-        'id': counter,
-        'timestamp': int(time.time())
-    }
-    recipe_list = {
-        'occurred_at': get_iso_date(),
-        'status_code': value,
-        'web_url': user_url,
-        'meta': meta_list
-    }
-    new_event = WebsiteUnavailableEvent(
-        trigger_name="website_down",
-        meta_id=meta_list['id'],
-        meta_timestamp=meta_list['timestamp'],
-        occurred_at=recipe_list['occurred_at'],
-        status_code=recipe_list['status_code'],
-        web_url=recipe_list['web_url'],
-    )
-    new_event.save()
 
 
 def __create_beer_in_list(brewery_name, beer_name, venue):
@@ -295,24 +257,6 @@ def __get_beer_event_records(limit, names):
     return event_list
 
 
-def __get_website_event_records(limit=50, user_url=None):
-    recipe_list = []
-    object_list = WebsiteUnavailableEvent.objects.filter(
-        web_url=user_url
-        ).order_by('-meta_timestamp')[:limit]
-    for version_event in object_list:
-        meta_list = {
-            'id': version_event.meta_id,
-            'timestamp': version_event.meta_timestamp,
-        }
-        returned_event = {
-            'occurred_at': str(version_event.occurred_at.isoformat('T')),
-            'status_code': version_event.status_code,
-            'meta': meta_list
-        }
-        recipe_list.append(returned_event)
-    return recipe_list
-
 @never_cache
 @csrf_exempt
 def ifttt(request, api_version=1, action='status',
@@ -372,16 +316,6 @@ def test(request):
         )
 
 
-def __update_website_status(status, user_url):
-    # get DB status, fixed
-    has_changed = __new_website_status(status, user_url)
-
-    # if status doesn't match
-    if has_changed:
-        #   create new event -
-        __create_website_unavailable_record(status, user_url)
-
-
 def __test_data(trigger_enum, record_iter, data=None):
 
     if trigger_enum == 0:
@@ -434,7 +368,7 @@ def json_builder(input_data, trigger_enum, limit,
     if trigger_enum == 2:
         data_list = get_update_records(limit)
     elif trigger_enum == 1:
-        data_list = __get_website_event_records(limit, input_data)
+        data_list = get_website_event_records(limit, input_data)
     elif trigger_enum == 3 or trigger_enum == 4:
         data_list = __get_beer_event_records(limit, input_data)
     elif trigger_enum == 5:
@@ -809,7 +743,7 @@ def website_down(request, limit, triggerFields):
     status = __get_website(url)
 
     # Query last event.  If status changed, add a new record
-    __update_website_status(status, url)
+    update_website_status(status, url)
 
     # Return all records
     data = json_builder(url, 1, limit)

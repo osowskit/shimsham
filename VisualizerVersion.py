@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 
 import requests
 import time
+import pytz
 import uuid
 
 def __version_from_xml_response(xml_data):
