@@ -21,10 +21,10 @@ from ifttt.BeerEventScrapper import get_beer_event_records, \
     get_beer_list_city, get_beer_list, create_beer_in_list, get_beer_in_list, \
     remove_beer_in_list, create_beer_on_tap_record
 from ifttt.UntappdVenue import get_venue_id, parse_untappd_venue_activity, \
-     update_venue_last_checkin
+    update_venue_last_checkin
 from ifttt.UntappdBeer import create_untappd_beer_on_tap_record, \
-     get_untappd_event_records, process_untappd_beer_list
-     
+    get_untappd_event_records, process_untappd_beer_list
+
 
 static_json = '{ \
   "data": { \

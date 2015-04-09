@@ -12,7 +12,6 @@ import uuid
 def get_iso_date():
     return datetime.now(pytz.utc).replace(microsecond=0).isoformat('T')
 
-# Venue Section
 
 def __create_venue_untappd(data):
     new_event = Venue(
