@@ -414,7 +414,7 @@ def json_builder(input_data, trigger_enum, limit,
     count = 0
 
     if trigger_enum == 2:
-        data_list = __get_update_records(limit)
+        data_list = get_update_records(limit)
     elif trigger_enum == 1:
         data_list = __get_website_event_records(limit, input_data)
     elif trigger_enum == 3 or trigger_enum == 4:
