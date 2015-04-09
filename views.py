@@ -295,6 +295,24 @@ def __get_beer_event_records(limit, names):
     return event_list
 
 
+def __get_website_event_records(limit=50, user_url=None):
+    recipe_list = []
+    object_list = WebsiteUnavailableEvent.objects.filter(
+        web_url=user_url
+        ).order_by('-meta_timestamp')[:limit]
+    for version_event in object_list:
+        meta_list = {
+            'id': version_event.meta_id,
+            'timestamp': version_event.meta_timestamp,
+        }
+        returned_event = {
+            'occurred_at': str(version_event.occurred_at.isoformat('T')),
+            'status_code': version_event.status_code,
+            'meta': meta_list
+        }
+        recipe_list.append(returned_event)
+    return recipe_list
+
 @never_cache
 @csrf_exempt
 def ifttt(request, api_version=1, action='status',
