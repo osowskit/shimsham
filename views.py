@@ -220,44 +220,6 @@ def test(request):
         )
 
 
-def __test_data(trigger_enum, record_iter, data=None):
-
-    if trigger_enum == 0:
-        if record_iter < 3:
-            counter = uid[record_iter]
-        else:
-            counter = str(uuid.uuid4())
-        meta_list = {
-            'id': counter,
-            'timestamp': int(time.time())
-        }
-        recipe_list = {
-            'created_at': get_iso_date(),
-            'where_to_go': 'https://getvisualizer.com/blog',
-            'number_of_posts': '0',
-            'meta': meta_list
-        }
-    elif trigger_enum == 1:
-        value = 200
-        if record_iter > 2 and data is not None:
-            value = data
-
-        if record_iter < 3:
-            counter = uid[record_iter]
-        else:
-            counter = str(uuid.uuid4())
-        meta_list = {
-            'id': counter,
-            'timestamp': int(time.time())
-        }
-        recipe_list = {
-            'occurred_at': get_iso_date(),
-            'status_code': value,
-            'meta': meta_list
-        }
-    return recipe_list
-
-
 def json_builder(input_data, trigger_enum, limit,
                  new_values=False, value=None):
     data = {}
@@ -277,10 +239,6 @@ def json_builder(input_data, trigger_enum, limit,
         data_list = get_beer_event_records(limit, input_data)
     elif trigger_enum == 5:
         data_list = __get_untappd_event_records(limit, input_data)
-    else:
-        while limit > count and num_records > count:
-            data_list.append(__test_data(trigger_enum, count, value))
-            count = count + 1
 
     data['data'] = data_list
     values = json.dumps(data)
