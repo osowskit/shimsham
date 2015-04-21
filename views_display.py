@@ -76,16 +76,17 @@ def getCodeURL():
     return url
 
 def oauth(request):
-    # search for CODE
     code = request.GET.get('code', None)
-    # If not None call Authorize 
     stored_user = None
+
+    # Should check if there is a session username first
     username = request.POST.get('username', None)
 
-    # If we have a username and they have a token, use it
     if username is not None:
         request.session['username'] = username
         stored_user = getUserToken(username)
+
+        # If we have a username and they have a token, use it
         if stored_user is not None:
             request.session['access_token'] = stored_user.access_token
             return render(request, 'ifttt/dashboard.html', {'username':username} )
@@ -109,4 +110,4 @@ def oauth(request):
                 return render(request, 'ifttt/dashboard.html', {'username':username} )
 
     print_str = '%s %s' % (code, username)
-    return HttpResponse(print_str)
+    return HttpResponseBadRequest()
