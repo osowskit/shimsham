@@ -105,9 +105,8 @@ def oauth(request):
         if 'response' in response:
             if 'access_token' in response['response']:
                 access_token = response['response']['access_token']
-                # WAT this should be stored_user
                 addUserToken(username, access_token)
-        return HttpResponse(access_token)
+                return HttpResponseRedirect('/')
 
     print_str = '%s %s' % (code, username)
     return HttpResponse(print_str)
