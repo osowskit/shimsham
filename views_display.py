@@ -106,7 +106,7 @@ def oauth(request):
             if 'access_token' in response['response']:
                 access_token = response['response']['access_token']
                 addUserToken(username, access_token)
-                return HttpResponseRedirect('/')
+                return render(request, 'ifttt/dashboard.html', {'username':username} )
 
     print_str = '%s %s' % (code, username)
     return HttpResponse(print_str)
