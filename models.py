@@ -1,6 +1,16 @@
 from django.db import models
 
 
+class User(models.Model):
+    username = models.CharField(max_length=128)
+    access_token = models.CharField(max_length=128)
+
+    def __unicode__(self):
+        return '%s: %s' % (
+            self.username,
+            self.access_token
+            )
+
 # Create your models here.
 class TriggerEvent(models.Model):
     TRIGGER_NAMES = (

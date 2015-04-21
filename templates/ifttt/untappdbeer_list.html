@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h2>User</h2>
+    <form action="/auth/" method="post">
+        {% csrf_token %}
+        <label for="your_name">Username: </label>
+        <input id="your_name" type="text" name="username" value="">
+        <input type="submit" value="OK">
+        </form>
+    <h2>Data</h2>
+    <div class="container-fluid">
+        {% for beer in object_list %}
+            {% ifchanged beer.brewery_name %} 
+                </div><div class='row'>
+                <div class='brewery_name col-xs-16'>{{beer.brewery_name}}</div>
+            {% endifchanged %}
+            <div  class='col-xs-4'>{{ beer.beer_name }}</div>
+        {% endfor %}
+        </div>
+    </div>
+{% endblock %}

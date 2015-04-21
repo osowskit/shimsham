@@ -5,7 +5,8 @@ from ifttt.models import VersionUpdateEvent, \
     BeerList, \
     UntappdBeer, \
     Venue, \
-    UntappdBeerOnTapEvent
+    UntappdBeerOnTapEvent, \
+    User
 
 admin.site.register(VersionUpdateEvent)
 admin.site.register(WebsiteUnavailableEvent)
@@ -14,3 +15,4 @@ admin.site.register(BeerList)
 admin.site.register(BeerOnTapEvent)
 admin.site.register(UntappdBeer)
 admin.site.register(Venue)
+admin.site.register(User)
