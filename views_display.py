@@ -19,6 +19,10 @@ def get_untappd_api(in_url, endpoint='venue/checkins/3282',
             'client_id': settings.UNTAPPD_API_CLIENT_ID,
             'client_secret': settings.UNTAPPD_API_SECRET,
             }
+    else:
+        payload = {
+            'access_token': access_token
+            }
     payload.update(data)
     url = in_url + endpoint
     try:
@@ -32,7 +36,7 @@ def getUsername(access_token):
     endpoint = '/user/info/'
     url = settings.UNTAPPD_API_URL
     data = get_untappd_api(url, endpoint, None, {}, access_token)
-    return data['response']['user']['username']
+    return data['response']['user']['user_name']
 
 # Add or update Token
 def addUserToken(username, token):
@@ -109,7 +113,7 @@ def oauth(request):
     # If we have a code, we should get new token and store it
     if code is not None:
         response = getToken(str(code))
-        return HttpResponse(str(response))
+
         access_token = None
         if 'response' in response:
             if 'access_token' in response['response']:
@@ -117,6 +121,8 @@ def oauth(request):
 
                 if username is None:
                     username = getUsername(access_token)
+                request.session['username'] = username
+                request.session.updated = True
                 addUserToken(username, access_token)
                 return render(request, 'ifttt/dashboard.html', {'username':username} )
 
