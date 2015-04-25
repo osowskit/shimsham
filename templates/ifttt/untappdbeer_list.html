@@ -4,10 +4,15 @@
     <h2>User</h2>
     <form action="/auth/" method="post">
         {% csrf_token %}
-        <label for="your_name">Username: </label>
-        <input id="your_name" type="text" name="username" value="">
-        <input type="submit" value="OK">
-        </form>
+        <label for="your_name">Login: </label>
+        <input type="submit" value="Login">
+    </form>
+    <form action="/logout/" method="post">
+        {% csrf_token %}
+        <label for="your_name">Logout: </label>
+        <input type="submit" value="Clear">
+    </form>
+        
     <h2>Data</h2>
     <div class="container-fluid">
         {% for beer in object_list %}

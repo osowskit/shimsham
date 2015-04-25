@@ -122,3 +122,6 @@ class UntappdBeer(Beer):
             self.beer_name,
             self.venue
             )
+
+    class Meta:
+        ordering = ['brewery_name']
