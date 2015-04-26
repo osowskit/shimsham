@@ -32,6 +32,7 @@ def get_untappd_api(in_url, endpoint='venue/checkins/3282',
         request_data = {}
     return request_data
 
+# WAT this should return None if bad response
 def getUsername(access_token):
     endpoint = '/user/info/'
     url = settings.UNTAPPD_API_URL
@@ -90,6 +91,9 @@ def clear_token(request):
     if 'username' in request.session:
         del request.session['username']
         request.session.modified = True
+    if 'access_token' in request.session:
+        del request.session['access_token']
+        request.session.modified = True
     return HttpResponseRedirect('/')
     
 def oauth(request):
@@ -98,6 +102,11 @@ def oauth(request):
     stored_user = None
 
     username = request.session.get('username', None)
+    access_token = request.session.get('access_token', None)
+    if username is not None and access_token is not None:
+        return render(request, 'ifttt/dashboard.html', {'username':username} )
+
+    # Somehow no access token
     if username is not None:
         stored_user = getUserToken(username)
 
@@ -118,11 +127,14 @@ def oauth(request):
         if 'response' in response:
             if 'access_token' in response['response']:
                 access_token = response['response']['access_token']
-
+                
                 if username is None:
                     username = getUsername(access_token)
+
+                request.session['access_token'] = access_token
                 request.session['username'] = username
                 request.session.updated = True
+
                 addUserToken(username, access_token)
                 return render(request, 'ifttt/dashboard.html', {'username':username} )
 
