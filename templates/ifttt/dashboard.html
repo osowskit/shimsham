@@ -3,6 +3,24 @@
 {% block content %}
     <h2>{{ username }}</h2>
     <div class="container-fluid">
+    {% for item, value in user_stats.items %}
+        <div><strong>{{item}}</strong>: {{ value }}</div>
+    {% endfor %}
     
+    <h3>Wishlist</h3>
+    {% for item, value in wish_list.items %}
+        <div><strong>{{item}}</strong>: {{ value }}</div>
+        
+    {% endfor %}
     </div>
+    
+    <h3>Wish Checkin</h4>
+    {% for beer_name, venue_list in wish_checkins.items %}
+    <h4>{{ beer_name }}</h4>
+        {% for item, value in venue_list.items %}
+            <div><strong>{{item}}</strong>: {{ value }}</div>
+        {% endfor %}
+    {% endfor %}
+    </div>
+
 {% endblock %}
