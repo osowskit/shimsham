@@ -2,12 +2,12 @@
 
 {% block content %}
     <h2>User</h2>
-    <form action="/auth/" method="post">
+    <form action="/auth/" method="post" name='login' class="ga_button">
         {% csrf_token %}
         <label for="your_name">Login: </label>
         <input type="submit" value="Login">
     </form>
-    <form action="/logout/" method="post">
+    <form action="/logout/" method="post" name='clear' class="ga_button">
         {% csrf_token %}
         <label for="your_name">Logout: </label>
         <input type="submit" value="Clear">

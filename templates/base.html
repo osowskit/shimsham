@@ -30,6 +30,17 @@
       ga('create', 'UA-62282472-1', 'auto');
       ga('send', 'pageview');
 
+        $(".ga_button").submit(function(e) {
+            var this_form = this
+            if (ga) {
+                ga("send", "event", "form", this.name, {
+                    'hitCallback': function(){
+                        this_form.submit()
+                    }
+                });
+            return false
+            }
+        });
     </script>
     </footer>
 </html>
