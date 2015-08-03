@@ -1,5 +1,5 @@
 # shimsham
-Api Shim for getting beer updates through IFTTT.  Data is sourced from Untappd.
+Api Shim for getting beer updates from Website Scrapper and Untappd API to IFTTT.  Data is sourced from Untappd via OAuth2 integration.
 ## Introduction
 Django app that provides an API endpoint for IFTTT notification services.  IFTTT will regularly poll various endpoint for a list of stored events - not realtime.  
 ## API endpoint and channels
